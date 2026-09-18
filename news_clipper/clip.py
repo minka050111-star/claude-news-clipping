@@ -10,7 +10,7 @@ from typing import Dict, List
 
 from .config import CATEGORIES
 from .fetch import NewsItem, fetch_keyword
-from .summarize import fetch_article_text, summarize_batch
+from .summarize import summarize_batch
 
 
 def collect(days: int, max_per_keyword: int, sleep_seconds: float = 0.3) -> "OrderedDict[str, List[NewsItem]]":
@@ -39,13 +39,12 @@ def collect(days: int, max_per_keyword: int, sleep_seconds: float = 0.3) -> "Ord
     return by_category
 
 
-def enrich_with_ai_summary(
-    by_category: Dict[str, List[NewsItem]], top_n: int = 3, min_text_len: int = 200
-) -> None:
+def enrich_with_ai_summary(by_category: Dict[str, List[NewsItem]], top_n: int = 3) -> None:
     """Draft 핵심 내용/면접 답변 포인트 for the most recent `top_n` items per
-    category, using the article's actual fetched text (never the title
-    alone) so the draft doesn't invent facts it can't support. Silently
-    no-ops if article text can't be fetched or ANTHROPIC_API_KEY is unset.
+    category. Claude fetches each article link itself (server-side
+    web_fetch) and drafts only from what it actually reads. No-ops, leaving
+    fields blank for the caller to fill in by hand, if ANTHROPIC_API_KEY is
+    unset, a fetch fails, or the request otherwise fails.
     """
     if top_n <= 0:
         return
@@ -55,11 +54,8 @@ def enrich_with_ai_summary(
     idx = 0
     for category, items in by_category.items():
         for item in items[:top_n]:
-            text = fetch_article_text(item.link)
-            if len(text) < min_text_len:
-                continue
             entries.append(
-                {"index": idx, "category": category, "title": item.title, "source": item.source, "text": text}
+                {"index": idx, "category": category, "title": item.title, "source": item.source, "link": item.link}
             )
             index_map[idx] = item
             idx += 1

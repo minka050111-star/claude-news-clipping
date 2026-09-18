@@ -104,44 +104,44 @@ class CollectTests(unittest.TestCase):
 
 
 class EnrichWithAiSummaryTests(unittest.TestCase):
-    def test_fills_ai_fields_for_top_n_when_text_and_api_key_available(self):
+    def test_fills_ai_fields_for_items_returned_by_summarize_batch(self):
         item = NewsItem(
             title="테스트 기사", link="https://example.com/a", source="s", published=1.0, category="c", keyword="k"
         )
         by_category = {"c": [item]}
 
-        with patch("news_clipper.clip.fetch_article_text", return_value="본문 " * 100), patch(
+        with patch(
             "news_clipper.clip.summarize_batch", return_value={0: {"core": "요약", "points": ["포인트"]}}
-        ):
-            enrich_with_ai_summary(by_category, top_n=3)
-
-        self.assertEqual(item.ai_core, "요약")
-        self.assertEqual(item.ai_points, ["포인트"])
-
-    def test_skips_items_with_too_little_extracted_text(self):
-        item = NewsItem(
-            title="테스트 기사", link="https://example.com/a", source="s", published=1.0, category="c", keyword="k"
-        )
-        by_category = {"c": [item]}
-
-        with patch("news_clipper.clip.fetch_article_text", return_value="짧음"), patch(
-            "news_clipper.clip.summarize_batch"
         ) as mock_summarize:
             enrich_with_ai_summary(by_category, top_n=3)
 
-        mock_summarize.assert_called_once_with([])
-        self.assertIsNone(item.ai_core)
+        mock_summarize.assert_called_once_with(
+            [{"index": 0, "category": "c", "title": "테스트 기사", "source": "s", "link": "https://example.com/a"}]
+        )
+        self.assertEqual(item.ai_core, "요약")
+        self.assertEqual(item.ai_points, ["포인트"])
 
-    def test_top_n_zero_skips_entirely_without_network_calls(self):
+    def test_leaves_fields_blank_for_indices_summarize_batch_omits(self):
         item = NewsItem(
             title="테스트 기사", link="https://example.com/a", source="s", published=1.0, category="c", keyword="k"
         )
         by_category = {"c": [item]}
 
-        with patch("news_clipper.clip.fetch_article_text") as mock_fetch:
+        with patch("news_clipper.clip.summarize_batch", return_value={}):
+            enrich_with_ai_summary(by_category, top_n=3)
+
+        self.assertIsNone(item.ai_core)
+
+    def test_top_n_zero_skips_entirely_without_calling_summarize(self):
+        item = NewsItem(
+            title="테스트 기사", link="https://example.com/a", source="s", published=1.0, category="c", keyword="k"
+        )
+        by_category = {"c": [item]}
+
+        with patch("news_clipper.clip.summarize_batch") as mock_summarize:
             enrich_with_ai_summary(by_category, top_n=0)
 
-        mock_fetch.assert_not_called()
+        mock_summarize.assert_not_called()
         self.assertIsNone(item.ai_core)
 
 
