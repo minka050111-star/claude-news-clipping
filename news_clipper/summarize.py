@@ -89,7 +89,7 @@ def summarize_batch(entries: List[ArticleEntry]) -> Dict[int, Summary]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
+        with urllib.request.urlopen(request, timeout=600) as response:
             payload = json.loads(response.read().decode("utf-8"))
         text_blocks = [b["text"] for b in payload.get("content", []) if b.get("type") == "text"]
         if not text_blocks:
