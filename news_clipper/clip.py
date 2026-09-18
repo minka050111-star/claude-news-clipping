@@ -10,6 +10,7 @@ from typing import Dict, List
 
 from .config import CATEGORIES
 from .fetch import NewsItem, fetch_keyword
+from .summarize import fetch_article_text, summarize_batch
 
 
 def collect(days: int, max_per_keyword: int, sleep_seconds: float = 0.3) -> "OrderedDict[str, List[NewsItem]]":
@@ -36,6 +37,38 @@ def collect(days: int, max_per_keyword: int, sleep_seconds: float = 0.3) -> "Ord
         collected.sort(key=lambda i: i.published or 0, reverse=True)
         by_category[category.name] = collected
     return by_category
+
+
+def enrich_with_ai_summary(
+    by_category: Dict[str, List[NewsItem]], top_n: int = 3, min_text_len: int = 200
+) -> None:
+    """Draft 핵심 내용/면접 답변 포인트 for the most recent `top_n` items per
+    category, using the article's actual fetched text (never the title
+    alone) so the draft doesn't invent facts it can't support. Silently
+    no-ops if article text can't be fetched or ANTHROPIC_API_KEY is unset.
+    """
+    if top_n <= 0:
+        return
+
+    entries = []
+    index_map: Dict[int, NewsItem] = {}
+    idx = 0
+    for category, items in by_category.items():
+        for item in items[:top_n]:
+            text = fetch_article_text(item.link)
+            if len(text) < min_text_len:
+                continue
+            entries.append(
+                {"index": idx, "category": category, "title": item.title, "source": item.source, "text": text}
+            )
+            index_map[idx] = item
+            idx += 1
+
+    results = summarize_batch(entries)
+    for i, item in index_map.items():
+        if i in results:
+            item.ai_core = results[i]["core"]
+            item.ai_points = results[i]["points"]
 
 
 def render_markdown(by_category: Dict[str, List[NewsItem]], days: int, generated_at: datetime) -> str:
@@ -65,8 +98,17 @@ def render_markdown(by_category: Dict[str, List[NewsItem]], days: int, generated
             meta = " · ".join(p for p in [item.source, date_str] if p)
             suffix = f" ({meta})" if meta else ""
             lines.append(f"- [{item.title}]({item.link}){suffix}")
-            lines.append("  - 핵심 내용: ")
-            lines.append("  - 면접 답변 포인트: ")
+            if item.ai_core:
+                lines.append(f"  - 핵심 내용 (AI 초안, 원문 확인 후 수정하세요): {item.ai_core}")
+                if item.ai_points:
+                    lines.append("  - 면접 답변 포인트 (AI 초안):")
+                    for point in item.ai_points:
+                        lines.append(f"    - {point}")
+                else:
+                    lines.append("  - 면접 답변 포인트: ")
+            else:
+                lines.append("  - 핵심 내용: ")
+                lines.append("  - 면접 답변 포인트: ")
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -79,9 +121,10 @@ def update_index(output_dir: Path) -> None:
     (output_dir / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_digest(output_dir: Path, days: int, max_per_keyword: int) -> Path:
+def write_digest(output_dir: Path, days: int, max_per_keyword: int, summarize_top_n: int = 3) -> Path:
     generated_at = datetime.now(timezone.utc).astimezone()
     by_category = collect(days=days, max_per_keyword=max_per_keyword)
+    enrich_with_ai_summary(by_category, top_n=summarize_top_n)
     markdown = render_markdown(by_category, days=days, generated_at=generated_at)
 
     output_dir.mkdir(parents=True, exist_ok=True)

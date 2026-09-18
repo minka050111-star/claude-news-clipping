@@ -9,7 +9,7 @@ from __future__ import annotations
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
 
@@ -25,6 +25,8 @@ class NewsItem:
     published: Optional[float]  # unix timestamp, None if unknown
     category: str
     keyword: str
+    ai_core: Optional[str] = None
+    ai_points: List[str] = field(default_factory=list)
 
 
 def build_url(keyword: str, days: int) -> str:
